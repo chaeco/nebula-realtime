@@ -63,6 +63,14 @@ export class NebulaHandler {
 
     const roomId = decodeURIComponent(match[1]);
     const action = match[2] || 'presence';
+    const resolvedUserId = resolveUserId(request);
+    const allowAnonymous = this.config.allowAnonymous ?? true;
+    if (!allowAnonymous && !resolvedUserId) {
+      return Response.json(
+        { error: 'unauthorized', message: 'userId required when allowAnonymous=false' },
+        { status: 401 }
+      );
+    }
 
     const durableObjectId = env.NEBULA_DO.idFromName(`${this.config.name}:${roomId}`);
     const doStub = env.NEBULA_DO.get(durableObjectId);
@@ -73,7 +81,7 @@ export class NebulaHandler {
     headers.set('x-nebula-room-id', roomId);
     headers.set('x-nebula-app-name', this.config.name);
     headers.set('x-nebula-history-limit', `${this.config.historyLimit ?? 100}`);
-    headers.set('x-nebula-user-id', resolveUserId(request));
+    headers.set('x-nebula-user-id', resolvedUserId || 'anonymous');
     headers.set('x-nebula-protocol-version', this.config.protocolVersion || 'v1');
     headers.set(
       'x-nebula-message-max-event-length',

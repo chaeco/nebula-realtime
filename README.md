@@ -28,6 +28,7 @@ import { NebulaRealtime, NebulaDurableObject } from '@chaeco/nebula-realtime';
 const nebula = new NebulaRealtime({
   name: 'my-realtime-app',
   routePrefix: '/realtime',
+  allowAnonymous: true,
   protocolVersion: 'v1',
   historyLimit: 200,
   message: {
@@ -105,6 +106,97 @@ WebSocket 消息示例：
 { "event": "chat.message", "payload": { "text": "hello" } }
 ```
 
+## 服务端使用
+
+### 1. Node 服务端发布消息（HTTP）
+
+```ts
+// Node.js 18+ (内置 fetch)
+const base = 'https://your-worker.example.com';
+const roomId = 'lobby';
+
+const resp = await fetch(`${base}/realtime/rooms/${roomId}/messages`, {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    // 宿主侧可用此字段透传业务用户
+    'x-nebula-user-id': 'server-bot'
+  },
+  body: JSON.stringify({
+    event: 'chat.message',
+    payload: { text: 'Hello from server' },
+    senderId: 'server-bot'
+  })
+});
+
+if (!resp.ok) {
+  throw new Error(`publish failed: ${resp.status}`);
+}
+console.log(await resp.json());
+```
+
+### 2. Node 服务端查询房间状态
+
+```ts
+const base = 'https://your-worker.example.com';
+const roomId = 'lobby';
+
+const presence = await fetch(`${base}/realtime/rooms/${roomId}/presence`).then((r) => r.json());
+const history = await fetch(`${base}/realtime/rooms/${roomId}/history?limit=20`).then((r) => r.json());
+const stats = await fetch(`${base}/realtime/rooms/${roomId}/stats`).then((r) => r.json());
+
+console.log({ presence, historyCount: history.count, stats });
+```
+
+## 客户端使用
+
+### 1. 浏览器连接 WebSocket
+
+```ts
+const baseWs = 'wss://your-worker.example.com';
+const roomId = 'lobby';
+const userId = 'u-1001';
+
+const ws = new WebSocket(`${baseWs}/realtime/rooms/${roomId}/ws?userId=${encodeURIComponent(userId)}`);
+
+ws.onopen = () => {
+  // 发送业务消息
+  ws.send(
+    JSON.stringify({
+      event: 'chat.message',
+      payload: { text: 'hello nebula' }
+    })
+  );
+};
+
+ws.onmessage = (ev) => {
+  const data = JSON.parse(ev.data);
+  console.log('message:', data);
+
+  // 可选：主动回复 pong（插件也支持 client.pong）
+  if (data.event === 'server.ping') {
+    ws.send(JSON.stringify({ event: 'client.pong' }));
+  }
+};
+
+ws.onclose = () => {
+  console.log('socket closed');
+};
+```
+
+### 2. 浏览器端 HTTP 发布（非 WS 场景）
+
+```ts
+await fetch(`/realtime/rooms/lobby/messages`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    event: 'chat.message',
+    payload: { text: 'from http client' }
+  })
+});
+```
+
 ## 事件模型
 
 ```json
@@ -145,6 +237,7 @@ WebSocket 消息示例：
 - 插件不实现认证、授权、业务 ACL。
 - 宿主负责鉴权、防刷、审计。
 - 插件只消费宿主透传的 `x-nebula-user-id`。
+- `allowAnonymous=false` 时，缺少 `x-nebula-user-id`（或 `?userId=`）会被拒绝（`401`）。
 
 ## 开发
 

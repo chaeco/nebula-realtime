@@ -70,4 +70,25 @@ describe('NebulaRealtime', () => {
     const forwarded = fetchSpy.mock.calls[0][0] as Request;
     expect(forwarded.headers.get('x-nebula-user-id')).toBe('admin-1');
   });
+
+  it('allowAnonymous=false 时未提供 userId 会拒绝', async () => {
+    const fetchSpy = vi.fn(async () => Response.json({ status: 'ok' }));
+    const nebula = new NebulaRealtime({
+      name: 'StrictInstance',
+      allowAnonymous: false
+    });
+    const env = {
+      NEBULA_DO: {
+        idFromName: vi.fn(() => 'do-id'),
+        get: vi.fn(() => ({ fetch: fetchSpy }))
+      }
+    };
+
+    const response = await nebula.handleRequest(
+      new Request('https://example.com/realtime/rooms/lobby/presence'),
+      env as never
+    );
+    expect(response.status).toBe(401);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

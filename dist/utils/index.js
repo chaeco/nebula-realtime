@@ -24,7 +24,7 @@ export const parseRoute = (url) => {
  * 从请求上下文解析用户身份。
  *
  * @param request - Incoming request / 进入插件的请求。
- * @returns User id from header/query or `anonymous` / 从请求头、查询参数解析 userId，默认 `anonymous`。
+ * @returns User id from header/query, or `null` when absent / 从请求头、查询参数解析 userId，缺失时返回 `null`。
  */
 export const resolveUserId = (request) => {
     const byHeader = request.headers.get('x-nebula-user-id');
@@ -32,7 +32,7 @@ export const resolveUserId = (request) => {
         return byHeader;
     }
     const url = parseRoute(request.url);
-    return url.searchParams.get('userId') || 'anonymous';
+    return url.searchParams.get('userId');
 };
 /**
  * Validates event name and payload size constraints.

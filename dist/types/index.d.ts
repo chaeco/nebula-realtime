@@ -4,6 +4,8 @@ export interface NebulaConfig {
     name: string;
     /** Optional route prefix, default `/realtime` / 可选路由前缀，默认 `/realtime`。 */
     routePrefix?: string;
+    /** Allow anonymous user connection, default `true` / 是否允许匿名用户连接，默认 `true`。 */
+    allowAnonymous?: boolean;
     /** Max retained history events per room, default 100 / 单房间历史消息保留数量，默认 100。 */
     historyLimit?: number;
     /** Protocol version, default `v1` / 协议版本号，默认 `v1`。 */

@@ -20,9 +20,9 @@ export declare const parseRoute: (url: string) => URL;
  * 从请求上下文解析用户身份。
  *
  * @param request - Incoming request / 进入插件的请求。
- * @returns User id from header/query or `anonymous` / 从请求头、查询参数解析 userId，默认 `anonymous`。
+ * @returns User id from header/query, or `null` when absent / 从请求头、查询参数解析 userId，缺失时返回 `null`。
  */
-export declare const resolveUserId: (request: Request) => string;
+export declare const resolveUserId: (request: Request) => string | null;
 /**
  * Validates event name and payload size constraints.
  * 校验事件名与 payload 体积约束。
