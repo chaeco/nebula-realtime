@@ -1,180 +1,157 @@
 # Nebula Realtime
 
-**Nebula Realtime** is an edge-native realtime infrastructure built on top of Cloudflare Workers and Durable Objects.
+Nebula Realtime 是一个基于 Cloudflare Workers + Durable Objects 的实时传输插件。  
+插件专注 WebSocket/房间广播/历史消息，不内置业务鉴权。
 
-It provides the foundation for building realtime features such as **chat, danmaku (live comments), notifications, and presence systems** with extremely low latency and global scalability.
+## 能力
 
-Nebula is designed as a **realtime engine** rather than a framework, allowing applications to build their own messaging and interaction layers on top of it.
+- 房间级 WebSocket 连接与广播
+- HTTP 发布消息
+- Presence 与历史消息读取
+- 协议版本字段（默认 `v1`）
+- 分段历史存储（降低每次写入 I/O）
+- 连接级限流（每秒/每分钟）
+- 心跳保活 + 超时剔除
+- 结构化指标与 `/stats`
 
----
+## 安装
 
-## Vision
-
-Nebula aims to provide a **simple, scalable realtime backend architecture** for modern edge platforms.
-
-Instead of running traditional realtime stacks like:
-
-```
-Node.js
-Redis
-WebSocket servers
-Message queues
-```
-
-Nebula leverages the edge-native capabilities of Cloudflare:
-
-```
-Workers + Durable Objects
+```bash
+npm install @chaeco/nebula-realtime
 ```
 
-This architecture enables realtime applications with minimal infrastructure management.
+## Worker 集成
 
----
+```ts
+import { NebulaRealtime, NebulaDurableObject } from '@chaeco/nebula-realtime';
 
-## Core Capabilities
+const nebula = new NebulaRealtime({
+  name: 'my-realtime-app',
+  routePrefix: '/realtime',
+  protocolVersion: 'v1',
+  historyLimit: 200,
+  message: {
+    maxEventNameLength: 64,
+    maxPayloadBytes: 16 * 1024
+  },
+  heartbeat: {
+    intervalMs: 15000,
+    timeoutMs: 45000
+  },
+  rateLimit: {
+    perConnectionPerSecond: 30,
+    perConnectionPerMinute: 600
+  },
+  observability: {
+    structuredLogs: true
+  }
+});
 
-Nebula provides primitives for building realtime systems:
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    // 宿主先做认证授权和 ACL，再交给插件
+    // if (!(await hostAuthorize(request))) return new Response('Forbidden', { status: 403 });
 
-* WebSocket connection management
-* Realtime room system
-* Message broadcasting
-* User presence tracking
-* Event streaming
-* Low-latency edge messaging
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/realtime')) {
+      // 可选：将业务用户 ID 透传给插件（用于事件 senderId / presence）
+      const headers = new Headers(request.headers);
+      headers.set('x-nebula-user-id', 'user-123');
+      const proxied = new Request(request, { headers });
+      return nebula.handleRequest(proxied, env);
+    }
+    return new Response('Host App Logic');
+  }
+};
 
----
-
-## Architecture
-
-```
-Client
-   │
-   ▼
-Cloudflare CDN
-   │
-   ▼
-Workers API
-   │
-   ▼
-Durable Objects
-   │
-   ├── D1 (message persistence)
-   ├── KV (presence & caching)
-   └── R2 (attachments)
-```
-
-### Components
-
-| Component       | Purpose                                    |
-| --------------- | ------------------------------------------ |
-| Workers         | Request routing, authentication, API layer |
-| Durable Objects | Realtime rooms and WebSocket handling      |
-| D1              | Persistent message storage                 |
-| KV              | Presence data and caching                  |
-| R2              | File storage for media and attachments     |
-
----
-
-## Realtime Model
-
-Nebula follows an **Actor-style architecture**.
-
-Each realtime entity is mapped to a Durable Object instance.
-
-Example:
-
-```
-chat:room_1     → Durable Object
-chat:room_2     → Durable Object
-video:1001      → Danmaku Object
-user:42         → User connection object
+export { NebulaDurableObject };
 ```
 
-Each object is responsible for:
+## 宿主鉴权模板
 
-* Managing WebSocket connections
-* Broadcasting events
-* Maintaining local state
-
----
-
-## Example Use Cases
-
-Nebula can power many realtime applications:
-
-* Messaging platforms
-* Live streaming chat
-* Danmaku systems
-* Collaboration tools
-* Online gaming rooms
-* Notification systems
-* Social communities
-
----
-
-## Repository Structure
-
-```
-nebula-realtime
-
-src/
-  core/
-    NebulaServer.ts
-    ConnectionManager.ts
-
-  rooms/
-    ChatRoom.ts
-    DanmakuRoom.ts
-
-  services/
-    ChatService.ts
-    NotificationService.ts
-    PresenceService.ts
-
-  storage/
-    MessageStore.ts
-
-  sdk/
-    client.ts
+```ts
+async function hostAuthorize(request: Request): Promise<boolean> {
+  const token = request.headers.get('authorization');
+  if (!token) return false;
+  // 这里接你自己的 JWT / Session / ACL 系统
+  return token.startsWith('Bearer ');
+}
 ```
 
----
+## wrangler.toml
 
-## Design Principles
+```toml
+[[durable_objects.bindings]]
+name = "NEBULA_DO"
+class_name = "NebulaDurableObject"
 
-Nebula follows several design goals:
+[[migrations]]
+tag = "v1"
+new_classes = ["NebulaDurableObject"]
+```
 
-### Edge-native
+## API
 
-The system is designed specifically for edge execution environments.
+- `GET /realtime/health`
+- `GET /realtime/rooms/:roomId/ws`
+- `POST /realtime/rooms/:roomId/messages`
+- `GET /realtime/rooms/:roomId/presence`
+- `GET /realtime/rooms/:roomId/history?limit=50`
+- `GET /realtime/rooms/:roomId/stats`
 
-### Stateless API layer
+WebSocket 消息示例：
 
-Workers act as routing and gateway nodes.
+```json
+{ "event": "chat.message", "payload": { "text": "hello" } }
+```
 
-### Stateful realtime layer
+## 事件模型
 
-Durable Objects provide strongly consistent stateful rooms.
+```json
+{
+  "id": "uuid",
+  "type": "message",
+  "event": "chat.message",
+  "roomId": "lobby",
+  "senderId": "u-1",
+  "payload": { "text": "hello" },
+  "timestamp": "2026-03-06 10:00:00",
+  "protocolVersion": "v1"
+}
+```
 
-### Minimal infrastructure
+系统事件：
+- `user.join`
+- `user.leave`
+- `server.ping`
+- `server.pong`
 
-No Redis clusters, message brokers, or websocket servers.
+`user.leave` payload：
+- `reason`: `close | error | timeout | rate_limit`
+- `code`: WebSocket close code（无则 `null`）
+- `detail`: 说明文本（无则 `null`）
 
----
+## 指标与日志
 
-## Scalability
+`/stats` 返回：
+- 活跃连接数
+- 历史分段信息（`firstChunk/chunk/chunkLength/total`）
+- 运行指标（接收、广播、拒绝、限流、离线原因统计）
 
-Nebula scales naturally with the edge network.
+开启 `structuredLogs` 后会输出 JSON 日志，便于接入外部观测系统。
 
-Each realtime room becomes an independent Durable Object instance, allowing the system to support a large number of concurrent rooms and users.
+## 鉴权边界
 
----
+- 插件不实现认证、授权、业务 ACL。
+- 宿主负责鉴权、防刷、审计。
+- 插件只消费宿主透传的 `x-nebula-user-id`。
 
-## Development Status
+## 开发
 
-Nebula is currently in early development and is intended to serve as the realtime backbone for projects built on Cloudflare Workers.
-
----
+```bash
+npm test
+npm run build
+```
 
 ## License
 
