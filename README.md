@@ -1,250 +1,52 @@
-# Nebula Realtime
+# Nebula Realtime Monorepo
 
-Nebula Realtime 是一个基于 Cloudflare Workers + Durable Objects 的实时传输插件。  
-插件专注 WebSocket/房间广播/历史消息，不内置业务鉴权。
+Nebula Realtime 是一个面向 Cloudflare Workers + Durable Objects 的实时通信方案，仓库采用 monorepo：
+- `@chaeco/nebula-realtime`：服务端插件（路由、DO 转发、房间实时能力）
+- `@chaeco/nebula-realtime-client`：客户端 SDK（WebSocket 连接、重连、心跳、HTTP 发布）
 
-## 能力
+## 文档导航
 
-- 房间级 WebSocket 连接与广播
-- HTTP 发布消息
-- Presence 与历史消息读取
-- 协议版本字段（默认 `v1`）
-- 分段历史存储（降低每次写入 I/O）
-- 连接级限流（每秒/每分钟）
-- 心跳保活 + 超时剔除
-- 结构化指标与 `/stats`
+- 服务端插件文档：[packages/server/README.md](./packages/server/README.md)
+- 客户端 SDK 文档：[packages/client/README.md](./packages/client/README.md)
 
-## 安装
+## 设计边界
+
+- 插件只负责实时传输能力（房间、广播、history、presence、stats）。
+- 插件支持 admin 管理动作（count/remove-users/disband），是否放行由宿主回调返回 `boolean` 决定。
+- 认证/授权/ACL 由宿主程序负责，插件仅消费宿主透传的用户身份（如 `x-nebula-user-id`）。
+
+## 仓库结构
+
+```text
+packages/
+  server/   # @chaeco/nebula-realtime
+  client/   # @chaeco/nebula-realtime-client
+```
+
+## 本地开发
 
 ```bash
-npm install @chaeco/nebula-realtime
-```
-
-## Worker 集成
-
-```ts
-import { NebulaRealtime, NebulaDurableObject } from '@chaeco/nebula-realtime';
-
-const nebula = new NebulaRealtime({
-  name: 'my-realtime-app',
-  routePrefix: '/realtime',
-  allowAnonymous: true,
-  protocolVersion: 'v1',
-  historyLimit: 200,
-  message: {
-    maxEventNameLength: 64,
-    maxPayloadBytes: 16 * 1024
-  },
-  heartbeat: {
-    intervalMs: 15000,
-    timeoutMs: 45000
-  },
-  rateLimit: {
-    perConnectionPerSecond: 30,
-    perConnectionPerMinute: 600
-  },
-  observability: {
-    structuredLogs: true
-  }
-});
-
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    // 宿主先做认证授权和 ACL，再交给插件
-    // if (!(await hostAuthorize(request))) return new Response('Forbidden', { status: 403 });
-
-    const url = new URL(request.url);
-    if (url.pathname.startsWith('/realtime')) {
-      // 可选：将业务用户 ID 透传给插件（用于事件 senderId / presence）
-      const headers = new Headers(request.headers);
-      headers.set('x-nebula-user-id', 'user-123');
-      const proxied = new Request(request, { headers });
-      return nebula.handleRequest(proxied, env);
-    }
-    return new Response('Host App Logic');
-  }
-};
-
-export { NebulaDurableObject };
-```
-
-## 宿主鉴权模板
-
-```ts
-async function hostAuthorize(request: Request): Promise<boolean> {
-  const token = request.headers.get('authorization');
-  if (!token) return false;
-  // 这里接你自己的 JWT / Session / ACL 系统
-  return token.startsWith('Bearer ');
-}
-```
-
-## wrangler.toml
-
-```toml
-[[durable_objects.bindings]]
-name = "NEBULA_DO"
-class_name = "NebulaDurableObject"
-
-[[migrations]]
-tag = "v1"
-new_classes = ["NebulaDurableObject"]
-```
-
-## API
-
-- `GET /realtime/health`
-- `GET /realtime/rooms/:roomId/ws`
-- `POST /realtime/rooms/:roomId/messages`
-- `GET /realtime/rooms/:roomId/presence`
-- `GET /realtime/rooms/:roomId/history?limit=50`
-- `GET /realtime/rooms/:roomId/stats`
-
-WebSocket 消息示例：
-
-```json
-{ "event": "chat.message", "payload": { "text": "hello" } }
-```
-
-## 服务端使用
-
-### 1. Node 服务端发布消息（HTTP）
-
-```ts
-// Node.js 18+ (内置 fetch)
-const base = 'https://your-worker.example.com';
-const roomId = 'lobby';
-
-const resp = await fetch(`${base}/realtime/rooms/${roomId}/messages`, {
-  method: 'POST',
-  headers: {
-    'content-type': 'application/json',
-    // 宿主侧可用此字段透传业务用户
-    'x-nebula-user-id': 'server-bot'
-  },
-  body: JSON.stringify({
-    event: 'chat.message',
-    payload: { text: 'Hello from server' },
-    senderId: 'server-bot'
-  })
-});
-
-if (!resp.ok) {
-  throw new Error(`publish failed: ${resp.status}`);
-}
-console.log(await resp.json());
-```
-
-### 2. Node 服务端查询房间状态
-
-```ts
-const base = 'https://your-worker.example.com';
-const roomId = 'lobby';
-
-const presence = await fetch(`${base}/realtime/rooms/${roomId}/presence`).then((r) => r.json());
-const history = await fetch(`${base}/realtime/rooms/${roomId}/history?limit=20`).then((r) => r.json());
-const stats = await fetch(`${base}/realtime/rooms/${roomId}/stats`).then((r) => r.json());
-
-console.log({ presence, historyCount: history.count, stats });
-```
-
-## 客户端使用
-
-### 1. 浏览器连接 WebSocket
-
-```ts
-const baseWs = 'wss://your-worker.example.com';
-const roomId = 'lobby';
-const userId = 'u-1001';
-
-const ws = new WebSocket(`${baseWs}/realtime/rooms/${roomId}/ws?userId=${encodeURIComponent(userId)}`);
-
-ws.onopen = () => {
-  // 发送业务消息
-  ws.send(
-    JSON.stringify({
-      event: 'chat.message',
-      payload: { text: 'hello nebula' }
-    })
-  );
-};
-
-ws.onmessage = (ev) => {
-  const data = JSON.parse(ev.data);
-  console.log('message:', data);
-
-  // 可选：主动回复 pong（插件也支持 client.pong）
-  if (data.event === 'server.ping') {
-    ws.send(JSON.stringify({ event: 'client.pong' }));
-  }
-};
-
-ws.onclose = () => {
-  console.log('socket closed');
-};
-```
-
-### 2. 浏览器端 HTTP 发布（非 WS 场景）
-
-```ts
-await fetch(`/realtime/rooms/lobby/messages`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    event: 'chat.message',
-    payload: { text: 'from http client' }
-  })
-});
-```
-
-## 事件模型
-
-```json
-{
-  "id": "uuid",
-  "type": "message",
-  "event": "chat.message",
-  "roomId": "lobby",
-  "senderId": "u-1",
-  "payload": { "text": "hello" },
-  "timestamp": "2026-03-06 10:00:00",
-  "protocolVersion": "v1"
-}
-```
-
-系统事件：
-- `user.join`
-- `user.leave`
-- `server.ping`
-- `server.pong`
-
-`user.leave` payload：
-- `reason`: `close | error | timeout | rate_limit`
-- `code`: WebSocket close code（无则 `null`）
-- `detail`: 说明文本（无则 `null`）
-
-## 指标与日志
-
-`/stats` 返回：
-- 活跃连接数
-- 历史分段信息（`firstChunk/chunk/chunkLength/total`）
-- 运行指标（接收、广播、拒绝、限流、离线原因统计）
-
-开启 `structuredLogs` 后会输出 JSON 日志，便于接入外部观测系统。
-
-## 鉴权边界
-
-- 插件不实现认证、授权、业务 ACL。
-- 宿主负责鉴权、防刷、审计。
-- 插件只消费宿主透传的 `x-nebula-user-id`。
-- `allowAnonymous=false` 时，缺少 `x-nebula-user-id`（或 `?userId=`）会被拒绝（`401`）。
-
-## 开发
-
-```bash
-npm test
+npm install
 npm run build
+npm test
 ```
+
+## 包发布说明
+
+当前仓库以本地工作区开发为主（你已明确不发布 npm）。
+如需在宿主项目中使用，可通过 workspace、git 子模块或私有制品库接入。
+
+## 版本策略
+
+当前处于创建阶段（creation phase），默认按“可破坏变更”推进，不保证向后兼容。
+
+## 生产运维文档
+
+- 运维快速开始：[ops/quickstart.md](./ops/quickstart.md)
+- 上线清单：[ops/production-checklist.md](./ops/production-checklist.md)
+- 压测方案：[ops/load-test-plan.md](./ops/load-test-plan.md)
+- 告警规则：[ops/alerts.md](./ops/alerts.md)
+- 故障手册：[ops/runbook.md](./ops/runbook.md)
 
 ## License
 

@@ -1,43 +1,26 @@
 {
-  "name": "@chaeco/nebula-realtime",
+  "name": "nebula-realtime-monorepo",
+  "private": true,
   "version": "1.0.0",
-  "description": "A high-performance real-time application layer plugin for Cloudflare Workers & Durable Objects.",
+  "description": "Monorepo for Nebula Realtime server and client packages.",
   "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "src"
+  "workspaces": [
+    "packages/*"
   ],
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
-  },
   "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "npm run build",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint 'src/**/*.{ts,tsx}'",
-    "format": "prettier --write 'src/**/*.{ts,tsx}'"
+    "build": "npm run clean && npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:watch": "npm run test:watch --workspaces --if-present",
+    "clean": "rm -rf packages/*/dist",
+    "ops:env": "node scripts/ops/validate-env.mjs",
+    "ops:preflight": "node scripts/ops/preflight.mjs",
+    "ops:smoke": "node scripts/ops/smoke-test.mjs"
   },
-  "keywords": [
-    "cloudflare-workers",
-    "durable-objects",
-    "real-time",
-    "plugin"
-  ],
   "author": "chaeco",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/chaeco/nebula-realtime.git"
-  },
-  "dependencies": {
-    "dayjs": "^1.11.10"
   },
   "devDependencies": {
     "typescript": "^5.3.3",

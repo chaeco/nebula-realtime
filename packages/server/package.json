@@ -1,0 +1,36 @@
+{
+  "name": "@chaeco/nebula-realtime",
+  "version": "1.0.0",
+  "description": "A high-performance realtime server plugin for Cloudflare Workers & Durable Objects.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "durable-objects",
+    "realtime",
+    "plugin"
+  ],
+  "author": "chaeco",
+  "license": "MIT",
+  "dependencies": {
+    "dayjs": "^1.11.10"
+  }
+}

@@ -1,0 +1,63 @@
+name: Ops Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_base_url:
+        description: "Target service base URL, e.g. https://api.example.com"
+        required: true
+        type: string
+      route_prefix:
+        description: "Route prefix, default /realtime"
+        required: false
+        default: "/realtime"
+        type: string
+      smoke_room_id:
+        description: "Smoke test room id"
+        required: false
+        default: "smoke-room"
+        type: string
+      enable_admin:
+        description: "Run admin smoke checks"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  preflight-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Preflight
+        run: node scripts/ops/preflight.mjs
+
+      - name: Validate Smoke Env
+        env:
+          OPS_MODE: smoke
+          TARGET_BASE_URL: ${{ inputs.target_base_url }}
+          ENABLE_ADMIN: ${{ inputs.enable_admin }}
+          ADMIN_USER_ID: ${{ secrets.NEBULA_ADMIN_USER_ID }}
+        run: node scripts/ops/validate-env.mjs
+
+      - name: Smoke Test
+        env:
+          TARGET_BASE_URL: ${{ inputs.target_base_url }}
+          ROUTE_PREFIX: ${{ inputs.route_prefix }}
+          SMOKE_ROOM_ID: ${{ inputs.smoke_room_id }}
+          ENABLE_ADMIN: ${{ inputs.enable_admin }}
+          ADMIN_USER_ID: ${{ secrets.NEBULA_ADMIN_USER_ID }}
+          ADMIN_BEARER: ${{ secrets.NEBULA_ADMIN_BEARER }}
+        run: node scripts/ops/smoke-test.mjs

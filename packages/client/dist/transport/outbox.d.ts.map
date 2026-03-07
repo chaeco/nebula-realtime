@@ -1,0 +1,1 @@
+{"version":3,"file":"outbox.d.ts","sourceRoot":"","sources":["../../src/transport/outbox.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,mBAAmB,EAAE,MAAM,aAAa,CAAC;AAElD;;;;;;;GAOG;AACH,eAAO,MAAM,cAAc,GACzB,OAAO,mBAAmB,EAAE,EAC5B,SAAS,mBAAmB,EAC5B,SAAS,MAAM,KACd,IAKF,CAAC;AAEF;;;;;;GAMG;AACH,eAAO,MAAM,mBAAmB,GAAI,IAAI,SAAS,EAAE,OAAO,mBAAmB,EAAE,KAAG,IAQjF,CAAC"}
